@@ -1,0 +1,632 @@
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fantürk Lojistik - Yükleme Optimizasyon Programı</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js (3B Grafik Kütüphanesi) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- jsPDF ve html2canvas (PDF Çıktısı İçin) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        /* Özelleştirilmiş Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        body { margin: 0; overflow: hidden; }
+        
+        #canvas-container { cursor: grab; }
+        #canvas-container:active { cursor: grabbing; }
+
+        /* Fantürk Özel Renkler */
+        .fanturk-blue { color: #2793d4; }
+        .fanturk-grey { color: #58595b; }
+        .bg-fanturk-blue { background-color: #2793d4; }
+        
+        /* Giriş Ekranı (Overlay) Katmanı */
+        #auth-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #f3f4f6; /* bg-gray-100 */
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex text-sm text-gray-800 font-sans">
+
+    <!-- ========================================== -->
+    <!-- GİRİŞ EKRANI (AUTH OVERLAY)                -->
+    <!-- ========================================== -->
+    <div id="auth-overlay">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-96 max-w-[90%] border-t-4" style="border-color: #2793d4;">
+            
+            <!-- Logo -->
+            <div class="flex flex-col items-center justify-center mb-6 select-none">
+                <div class="text-4xl font-extrabold italic tracking-tighter flex">
+                    <span class="fanturk-blue">fan</span>
+                    <span class="fanturk-grey">türk</span>
+                </div>
+                <div class="fanturk-grey mt-1 font-semibold uppercase text-[9px]" style="letter-spacing: 0.15em;">
+                    İklimlendirme Sistemleri
+                </div>
+                <div class="fanturk-grey mt-0.5 font-light uppercase text-xs" style="letter-spacing: 0.3em;">
+                    Lojistik Optimizasyon
+                </div>
+            </div>
+            
+            <h2 class="text-lg font-bold text-center text-gray-700 mb-6 border-b pb-2">Sisteme Giriş</h2>
+            
+            <!-- Hata Mesajı -->
+            <div id="auth-error" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4 text-xs hidden" role="alert">
+                <span class="block sm:inline" id="auth-error-msg">Hatalı giriş!</span>
+            </div>
+
+            <!-- Form -->
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 text-xs font-bold mb-1" for="email">E-posta Adresi</label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-[#2793d4] focus:border-[#2793d4]" id="email" type="email" placeholder="admin@fanturk.com" required>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-xs font-bold mb-1" for="password">Şifre</label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-[#2793d4] focus:border-[#2793d4]" id="password" type="password" placeholder="123456" required>
+                </div>
+                <div class="pt-2">
+                    <button class="w-full bg-[#2793d4] hover:bg-blue-600 text-white font-bold py-2.5 px-4 rounded focus:outline-none transition duration-150 shadow" type="submit" id="login-btn">
+                        Giriş Yap
+                    </button>
+                </div>
+                <p class="text-[10px] text-gray-400 text-center mt-2">
+                    Test için Admin: <b>admin@fanturk.com</b> / <b>123456</b><br>
+                    Personel: <b>personel@fanturk.com</b> / <b>123456</b>
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ANA UYGULAMA (Başlangıçta Gizli)           -->
+    <!-- ========================================== -->
+    <div id="main-app" class="flex w-full h-full hidden">
+        
+        <!-- Sol Menü -->
+        <div class="w-[420px] bg-white shadow-xl flex flex-col z-20 relative">
+            
+            <!-- Logo Alanı ve Çıkış Butonu -->
+            <div class="flex flex-col items-center justify-center bg-white pt-6 pb-4 border-b-4 relative" style="border-color: #2793d4;">
+                <button id="logout-btn" class="absolute top-2 left-2 text-[10px] text-gray-500 hover:text-red-500 transition px-2 py-1 bg-gray-100 rounded border border-gray-200">Çıkış Yap</button>
+                
+                <div class="text-4xl font-extrabold italic tracking-tighter flex select-none mt-2">
+                    <span class="fanturk-blue">fan</span>
+                    <span class="fanturk-grey">türk</span>
+                </div>
+                <div class="fanturk-grey mt-1 font-semibold uppercase text-[9px]" style="letter-spacing: 0.15em;">İklimlendirme Sistemleri</div>
+            </div>
+
+            <!-- YÖNETİCİ (ADMIN) PANELİ (Sadece admin@fanturk.com görür) -->
+            <div id="admin-panel" class="hidden bg-purple-50 p-4 border-b border-purple-200">
+                <h3 class="font-bold text-purple-800 text-xs mb-2 flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    Yönetici Paneli: Yeni Personel Ekle
+                </h3>
+                <form id="register-form" class="space-y-2">
+                    <input type="email" id="new-user-email" placeholder="Yeni Personel E-posta" class="w-full p-1.5 text-xs border rounded outline-none focus:border-purple-400" required>
+                    <input type="password" id="new-user-password" placeholder="Şifre Belirle (Min 6 hane)" class="w-full p-1.5 text-xs border rounded outline-none focus:border-purple-400" required minlength="6">
+                    <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs py-1.5 rounded font-bold transition">Hesabı Aç</button>
+                </form>
+                <div id="admin-msg" class="text-[10px] mt-2 hidden font-bold text-center text-green-600"></div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4">
+                <!-- Tır Ölçüleri -->
+                <div class="mb-6 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                    <h2 class="font-semibold fanturk-blue mb-3 border-b pb-1">Araç Ölçüleri (cm)</h2>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="block text-[10px] text-gray-500 mb-1">Genişlik</label>
+                            <input type="number" id="truck-width" value="240" class="w-full p-1.5 border rounded focus:ring-[#2793d4] outline-none text-xs" />
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-gray-500 mb-1">Uzunluk</label>
+                            <input type="number" id="truck-length" value="1360" class="w-full p-1.5 border rounded focus:ring-[#2793d4] outline-none text-xs" />
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-gray-500 mb-1">Yükseklik</label>
+                            <input type="number" id="truck-height" value="260" class="w-full p-1.5 border rounded focus:ring-[#2793d4] outline-none text-xs" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Paletler -->
+                <div class="mb-4 flex justify-between items-center border-b pb-1">
+                    <h2 class="font-semibold fanturk-blue">Yüklenecek Ürünler</h2>
+                    <button onclick="addPallet()" class="text-xs bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded transition shadow">
+                        + Ekle
+                    </button>
+                </div>
+                
+                <div id="pallets-container" class="space-y-4"></div>
+            </div>
+
+            <!-- Hesapla Butonu -->
+            <div class="p-4 bg-gray-50 border-t">
+                <button onclick="calculateLoading()" class="w-full bg-fanturk-blue hover:bg-blue-600 text-white font-bold py-3 rounded-lg shadow-lg transition duration-200 transform hover:scale-[1.02]">
+                    Optimum Yerleşimi Hesapla
+                </button>
+            </div>
+        </div>
+
+        <!-- Sağ Taraf (Görselleştirme ve Rapor) -->
+        <div class="flex-1 flex flex-col bg-gray-900 relative overflow-hidden">
+            
+            <!-- Arka Plan Filigranı -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-0 opacity-[0.04] select-none mix-blend-screen">
+                <div class="flex flex-col items-center transform -rotate-12 scale-[2.5]">
+                    <div class="text-9xl font-extrabold italic tracking-tighter flex"><span class="text-blue-400">fan</span><span class="text-white">türk</span></div>
+                </div>
+            </div>
+
+            <!-- 3B Tuval -->
+            <div id="canvas-container" class="flex-1 relative z-10">
+                <div class="absolute top-4 left-4 bg-black/60 text-white px-3 py-2 rounded text-xs pointer-events-none backdrop-blur-sm border border-gray-700">
+                    💡 İpucu: Farenin <b>Sol Tuşu</b> ile döndür, <b>Sağ Tuşu</b> ile kaydır, <b>Tekerleği</b> ile yakınlaş.
+                </div>
+            </div>
+
+            <!-- Rapor Paneli -->
+            <div class="bg-white h-1/3 border-t-4 z-20 relative p-4 flex flex-col transition-all duration-300" style="border-color: #2793d4;">
+                <div class="flex justify-between items-center mb-2 border-b pb-1">
+                    <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 fanturk-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        Yükleme Raporu
+                    </h2>
+                    <button onclick="generatePDF()" id="pdf-btn" class="hidden text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded transition shadow flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        PDF İndir
+                    </button>
+                </div>
+                <div id="report-content" class="flex-1 text-gray-600 overflow-y-auto pr-2">
+                    Hesaplama bekleniyor...
+                </div>
+            </div>
+        </div>
+    </div> <!-- End Main App -->
+
+    <!-- ========================================== -->
+    <!-- SİMÜLE EDİLMİŞ GİRİŞ VE SİSTEM MANTIĞI     -->
+    <!-- ========================================== -->
+    <script>
+        // --- AUTH SİMÜLASYONU ---
+        const authOverlay = document.getElementById('auth-overlay');
+        const mainApp = document.getElementById('main-app');
+        const loginForm = document.getElementById('login-form');
+        const authError = document.getElementById('auth-error');
+        const adminPanel = document.getElementById('admin-panel');
+        const registerForm = document.getElementById('register-form');
+        
+        // Demo Veritabanı (Bellekte tutulur)
+        const demoUsers = {
+            "admin@fanturk.com": { password: "123456", role: "admin" },
+            "personel@fanturk.com": { password: "123456", role: "user" }
+        };
+
+        // Giriş Yapma
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+
+            if (demoUsers[email] && demoUsers[email].password === password) {
+                // Giriş Başarılı
+                authOverlay.classList.add('hidden');
+                mainApp.classList.remove('hidden');
+                authError.classList.add('hidden');
+                
+                // Admin kontrolü
+                if (demoUsers[email].role === 'admin') {
+                    adminPanel.classList.remove('hidden');
+                } else {
+                    adminPanel.classList.add('hidden');
+                }
+                
+                // Uygulamayı başlat
+                if(!window.is3DInitialized) {
+                    renderPallets();
+                    init3D();
+                    calculateLoading(); 
+                    window.is3DInitialized = true;
+                } else {
+                    onWindowResize(); 
+                }
+            } else {
+                // Hatalı Giriş
+                authError.classList.remove('hidden');
+                document.getElementById('auth-error-msg').innerText = "Hatalı e-posta veya şifre girdiniz.";
+            }
+        });
+
+        // Çıkış Yapma
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            loginForm.reset();
+            authOverlay.classList.remove('hidden');
+            mainApp.classList.add('hidden');
+            adminPanel.classList.add('hidden');
+        });
+
+        // Yönetici (Admin) Tarafından Yeni Kullanıcı Ekleme
+        registerForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newEmail = document.getElementById('new-user-email').value.trim();
+            const newPassword = document.getElementById('new-user-password').value;
+            const msg = document.getElementById('admin-msg');
+
+            if(demoUsers[newEmail]) {
+                msg.classList.remove('hidden');
+                msg.className = "text-[10px] mt-2 font-bold text-red-600 text-center";
+                msg.innerText = "Bu e-posta zaten kayıtlı!";
+            } else {
+                // Yeni kullanıcıyı demo listesine ekle
+                demoUsers[newEmail] = { password: newPassword, role: "user" };
+                
+                msg.classList.remove('hidden');
+                msg.className = "text-[10px] mt-2 font-bold text-green-600 text-center";
+                msg.innerText = newEmail + " başarıyla oluşturuldu!";
+                registerForm.reset();
+                
+                setTimeout(() => { msg.classList.add('hidden'); }, 3000);
+            }
+        });
+
+
+        // --- YÜKLEME ALGORİTMASI VE 3B SİSTEMİ ---
+        let pallets = [
+            { id: 1, name: 'Klima Dış Ünite', w: 80, l: 120, h: 100, q: 10, canRotate: true, canStack: true, color: '#2793d4' }, 
+            { id: 2, name: 'Havalandırma Fanı', w: 100, l: 120, h: 120, q: 8, canRotate: true, canStack: false, color: '#58595b' } 
+        ];
+        const paletteColors = ['#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6'];
+        let colorIndex = 0;
+
+        function generatePalletHTML(pallet) {
+            return `
+            <div class="bg-white border rounded-lg p-3 shadow-sm relative group border-gray-200" id="pallet-${pallet.id}">
+                <div class="absolute top-2 right-2 flex gap-2">
+                    <div class="w-3 h-3 rounded-full border border-gray-300" style="background-color: ${pallet.color}"></div>
+                    <button onclick="removePallet(${pallet.id})" class="text-red-400 hover:text-red-600" title="Sil">✖</button>
+                </div>
+                <div class="mb-2 pr-8">
+                    <label class="block text-[10px] text-gray-500 font-medium">Palet Adı / İçerik</label>
+                    <input type="text" onchange="updatePalletString(${pallet.id}, 'name', this.value)" value="${pallet.name}" class="w-full p-1 border rounded text-xs font-semibold focus:ring-[#2793d4] outline-none" />
+                </div>
+                <div class="grid grid-cols-4 gap-1 mb-2">
+                    <div><label class="block text-[9px] text-gray-500">Geniş</label><input type="number" onchange="updatePallet(${pallet.id}, 'w', this.value)" value="${pallet.w}" class="w-full p-1 border rounded text-xs outline-none" /></div>
+                    <div><label class="block text-[9px] text-gray-500">Uzun</label><input type="number" onchange="updatePallet(${pallet.id}, 'l', this.value)" value="${pallet.l}" class="w-full p-1 border rounded text-xs outline-none" /></div>
+                    <div><label class="block text-[9px] text-gray-500">Yüks</label><input type="number" onchange="updatePallet(${pallet.id}, 'h', this.value)" value="${pallet.h}" class="w-full p-1 border rounded text-xs outline-none" /></div>
+                    <div><label class="block text-[9px] text-gray-500">Adet</label><input type="number" onchange="updatePallet(${pallet.id}, 'q', this.value)" value="${pallet.q}" class="w-full p-1 border rounded text-xs font-bold bg-blue-50 outline-none" /></div>
+                </div>
+                <div class="flex gap-2 mt-2 bg-gray-50 p-1.5 rounded">
+                    <label class="flex items-center space-x-1 text-[10px] cursor-pointer"><input type="checkbox" onchange="updatePallet(${pallet.id}, 'canRotate', this.checked)" ${pallet.canRotate ? 'checked' : ''} class="rounded text-[#2793d4]"><span>Döndür 🔄</span></label>
+                    <label class="flex items-center space-x-1 text-[10px] cursor-pointer"><input type="checkbox" onchange="updatePallet(${pallet.id}, 'canStack', this.checked)" ${pallet.canStack ? 'checked' : ''} class="rounded text-[#2793d4]"><span>İstifle ⬆️</span></label>
+                </div>
+            </div>`;
+        }
+
+        function renderPallets() { document.getElementById('pallets-container').innerHTML = pallets.map(generatePalletHTML).join(''); }
+        function addPallet() { pallets.push({ id: Date.now(), name: 'Yeni Ürün', w: 100, l: 120, h: 100, q: 5, canRotate: true, canStack: true, color: paletteColors[colorIndex++ % paletteColors.length] }); renderPallets(); }
+        function removePallet(id) { pallets = pallets.filter(p => p.id !== id); renderPallets(); }
+        function updatePalletString(id, field, value) { const p = pallets.find(p => p.id === id); if (p) p[field] = value; }
+        function updatePallet(id, field, value) { const p = pallets.find(p => p.id === id); if (p) { if(field === 'canRotate' || field === 'canStack') p[field]=value; else p[field] = parseInt(value) || 0; } }
+
+        function packPallets() {
+            const truck = { w: parseInt(document.getElementById('truck-width').value)||240, l: parseInt(document.getElementById('truck-length').value)||1360, h: parseInt(document.getElementById('truck-height').value)||260 };
+            let items = [];
+            pallets.forEach(p => { for (let i = 0; i < p.q; i++) items.push({ w: p.w, l: p.l, h: p.h, canRotate: p.canRotate, canStack: p.canStack, color: p.color, vol: p.w*p.l*p.h, area: p.w*p.l, name: p.name }); });
+            items.sort((a, b) => b.area !== a.area ? b.area - a.area : b.vol - a.vol);
+
+            let placedBoxes = [], unplacedItems = [], extremePoints = [{ x: 0, y: 0, z: 0 }]; 
+
+            function checkCollision(box) {
+                if (box.x < -0.1 || box.y < -0.1 || box.z < -0.1 || box.x+box.w > truck.w+0.1 || box.y+box.h > truck.h+0.1 || box.z+box.l > truck.l+0.1) return true;
+                for (let pb of placedBoxes) if (box.x+0.1 < pb.x+pb.w && box.x+box.w-0.1 > pb.x && box.y+0.1 < pb.y+pb.h && box.y+box.h-0.1 > pb.y && box.z+0.1 < pb.z+pb.l && box.z+box.l-0.1 > pb.z) return true;
+                return false;
+            }
+            function hasSupport(box) {
+                if (box.y === 0) return true; 
+                let supportArea = 0;
+                for (let pb of placedBoxes) {
+                    if (Math.abs((pb.y + pb.h) - box.y) < 0.1) { 
+                        let iw = Math.min(box.x+box.w, pb.x+pb.w) - Math.max(box.x, pb.x);
+                        let il = Math.min(box.z+box.l, pb.z+pb.l) - Math.max(box.z, pb.z);
+                        if (iw > 0 && il > 0) supportArea += (iw * il);
+                    }
+                }
+                return supportArea >= ((box.w * box.l) * 0.98); 
+            }
+
+            for (let item of items) {
+                let bestP = null, bestO = null, minD = Infinity;
+                extremePoints = extremePoints.filter(ep => { for(let pb of placedBoxes) if (ep.x>pb.x && ep.x<pb.x+pb.w && ep.y>pb.y && ep.y<pb.y+pb.h && ep.z>pb.z && ep.z<pb.z+pb.l) return false; return true; });
+                
+                for (let ep of extremePoints) {
+                    if (!item.canStack && ep.y > 0) continue;
+                    let oris = [ {w: item.w, l: item.l, h: item.h} ]; if (item.canRotate && item.w !== item.l) oris.push({w: item.l, l: item.w, h: item.h});
+                    
+                    for (let ori of oris) {
+                        let tBox = { x: ep.x, y: ep.y, z: ep.z, w: ori.w, h: ori.h, l: ori.l };
+                        if (!checkCollision(tBox) && hasSupport(tBox)) {
+                            let dist = (tBox.z * 100000) + (tBox.y * 1000) + tBox.x;
+                            if (dist < minD) { minD = dist; bestP = ep; bestO = ori; }
+                        }
+                    }
+                }
+                if (bestP) {
+                    let nB = { x: bestP.x, y: bestP.y, z: bestP.z, w: bestO.w, h: bestO.h, l: bestO.l, color: item.color, name: item.name };
+                    placedBoxes.push(nB);
+                    if (item.canStack) extremePoints.push({x: nB.x, y: nB.y+nB.h, z: nB.z}); 
+                    extremePoints.push({x: nB.x+nB.w, y: nB.y, z: nB.z}); 
+                    extremePoints.push({x: nB.x, y: nB.y, z: nB.z+nB.l}); 
+                } else unplacedItems.push(item);
+            }
+            return { truck, placedBoxes, unplacedItems, tLen: items.length };
+        }
+
+        let scene, camera, renderer, controls, truckGroup;
+        function init3D() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene(); scene.background = null; 
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 15000); camera.position.set(2000, 1500, 2500);
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); 
+            renderer.setSize(container.clientWidth, container.clientHeight); renderer.setClearColor( 0x000000, 0 ); 
+            container.appendChild(renderer.domElement);
+            controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.dampingFactor = 0.05; controls.maxPolarAngle = Math.PI / 2 + 0.1;
+            scene.add(new THREE.AmbientLight(0xffffff, 0.7)); 
+            let dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(1000, 2000, 1000); scene.add(dl);
+            let dl2 = new THREE.DirectionalLight(0xffffff, 0.3); dl2.position.set(-1000, 1000, -1000); scene.add(dl2);
+            truckGroup = new THREE.Group(); scene.add(truckGroup);
+            window.addEventListener('resize', window.onWindowResize, false);
+            animate();
+        }
+
+        window.onWindowResize = function() {
+            const c = document.getElementById('canvas-container');
+            if(camera && renderer) { camera.aspect = c.clientWidth / c.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(c.clientWidth, c.clientHeight); }
+        }
+        function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+        function makeTextSprite(message) {
+            const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+            ctx.font = `bold 24px Arial`; const w = ctx.measureText(message).width; canvas.width = w + 20; canvas.height = 40;
+            ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.roundRect(0,0,canvas.width,canvas.height,5); ctx.fill();
+            ctx.fillStyle = "white"; ctx.font = `bold 24px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(message, canvas.width/2, canvas.height/2);
+            const tex = new THREE.CanvasTexture(canvas); tex.minFilter = THREE.LinearFilter;
+            const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex })); s.scale.set(canvas.width*0.6, canvas.height*0.6, 1); return s;
+        }
+
+        function drawLoading(res) {
+            while(truckGroup.children.length>0) truckGroup.remove(truckGroup.children[0]); 
+            const ox = -res.truck.w/2, oy = -res.truck.h/2, oz = -res.truck.l/2;
+            const tGeo = new THREE.BoxGeometry(res.truck.w, res.truck.h, res.truck.l);
+            let tl = new THREE.LineSegments(new THREE.EdgesGeometry(tGeo), new THREE.LineBasicMaterial({ color: 0x58595b, linewidth: 2 })); tl.position.set(0,0,0); truckGroup.add(tl);
+            let fl = new THREE.Mesh(new THREE.PlaneGeometry(res.truck.w, res.truck.l), new THREE.MeshBasicMaterial({ color: 0x1f2937, side: THREE.DoubleSide, transparent:true, opacity:0.8 })); fl.rotation.x = Math.PI/2; fl.position.set(0, oy, 0); truckGroup.add(fl);
+            
+            res.placedBoxes.forEach(b => {
+                let bg = new THREE.Group();
+                let m = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.l), new THREE.MeshPhongMaterial({ color: b.color, transparent:true, opacity:0.95 }));
+                m.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(b.w, b.h, b.l)), new THREE.LineBasicMaterial({ color: 0x0, linewidth: 1 })));
+                bg.add(m);
+                if(b.name) { let s = makeTextSprite(b.name); s.position.set(0, b.h/2 + 10, 0); bg.add(s); }
+                bg.position.set(b.x+b.w/2+ox, b.y+b.h/2+oy, b.z+b.l/2+oz); truckGroup.add(bg);
+            });
+            let md = Math.max(res.truck.w, res.truck.h, res.truck.l); camera.position.set(md*0.8, md*0.6, md*1.2); controls.target.set(0,0,0); controls.update();
+        }
+
+        window.calculateLoading = function() {
+            document.getElementById('report-content').innerHTML = 'Hesaplanıyor...';
+            document.getElementById('pdf-btn').classList.add('hidden'); // Hesaplama bitene kadar gizle
+            setTimeout(() => {
+                const res = packPallets(); drawLoading(res);
+                let uV = 0, mZ = 0; res.placedBoxes.forEach(b => { uV += (b.w*b.h*b.l); if(b.z+b.l>mZ) mZ = b.z+b.l; });
+                const eff = ((uV / (res.truck.w*res.truck.h*res.truck.l)) * 100).toFixed(1);
+                
+                // PDF için sonuçları global bir değişkene kaydet
+                window.lastCalculationResult = {
+                    ...res,
+                    maxZ: mZ,
+                    efficiency: eff
+                };
+
+                let h = `<div class="grid grid-cols-2 gap-2 mb-2">
+                    <div class="bg-blue-50 p-2 rounded border border-blue-200"> <div class="text-[10px] font-bold text-[#2793d4]">Yerleşen</div> <div class="text-lg font-bold">${res.placedBoxes.length}/${res.tLen}</div> </div>
+                    <div class="bg-green-50 p-2 rounded border border-green-200"> <div class="text-[10px] font-bold text-green-700">Verim</div> <div class="text-lg font-bold">%${eff}</div> </div>
+                    <div class="bg-purple-50 p-2 rounded border border-purple-200"> <div class="text-[10px] font-bold text-purple-700">Dolu Uzunluk</div> <div class="text-lg font-bold">${(mZ/100).toFixed(2)}m</div> </div>
+                    <div class="bg-orange-50 p-2 rounded border border-orange-200"> <div class="text-[10px] font-bold text-orange-700">Kalan Boşluk</div> <div class="text-lg font-bold">${((res.truck.l-mZ)/100).toFixed(2)}m</div> </div>
+                </div>`;
+                if(res.unplacedItems.length>0) h += `<div class="text-xs text-red-600 font-bold mt-1">⚠️ Sığmayan ${res.unplacedItems.length} palet var.</div>`;
+                document.getElementById('report-content').innerHTML = h;
+                document.getElementById('pdf-btn').classList.remove('hidden'); // Hesaplama bitti, butonu göster
+            }, 50);
+        }
+
+        // --- PDF OLUŞTURMA İŞLEMİ ---
+        window.generatePDF = async function() {
+            if (!window.lastCalculationResult) return;
+            const res = window.lastCalculationResult;
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'mm', 'a4'); // A4 boyutunda dikey PDF
+            const pageWidth = doc.internal.pageSize.getWidth();
+            let cursorY = 15;
+
+            // 1. Başlık
+            doc.setFontSize(18);
+            doc.setTextColor(39, 147, 212); // Fantürk Mavisi
+            doc.text("Fanturk Lojistik", pageWidth / 2, cursorY, { align: "center" });
+            cursorY += 8;
+            
+            doc.setFontSize(14);
+            doc.setTextColor(88, 89, 91); // Fantürk Grisi
+            doc.text("Ekipman Paketleme Raporu", pageWidth / 2, cursorY, { align: "center" });
+            cursorY += 15;
+
+            // 2. Özet Bilgileri (Summary)
+            doc.setFontSize(10);
+            doc.setTextColor(0, 0, 0);
+            
+            const usedLengthMeters = (res.maxZ / 100).toFixed(2);
+            const remainingLengthMeters = ((res.truck.l - res.maxZ) / 100).toFixed(2);
+
+            // Özet kutusu çiz (Opsiyonel ama şık durur)
+            doc.setDrawColor(200, 200, 200);
+            doc.setFillColor(245, 245, 245);
+            doc.roundedRect(10, cursorY - 5, pageWidth - 20, 25, 3, 3, 'FD');
+
+            doc.text(`Konteyner / Tir: ${res.truck.w} x ${res.truck.l} x ${res.truck.h} cm`, 15, cursorY);
+            doc.text(`Toplam Palet (Istenen): ${res.tLen}`, 15, cursorY + 6);
+            doc.text(`Yerlesen Palet: ${res.placedBoxes.length}`, 15, cursorY + 12);
+            
+            // Eğer sığmayan varsa kırmızı yaz
+            if(res.unplacedItems.length > 0) {
+                doc.setTextColor(255, 0, 0);
+                doc.text(`Sigmayan Palet: ${res.unplacedItems.length}`, 15, cursorY + 18);
+                doc.setTextColor(0, 0, 0);
+            }
+
+            // Sağ taraf
+            doc.text(`Hacim Verimliligi: %${res.efficiency}`, 120, cursorY);
+            doc.text(`Kullanilan Uzunluk: ${usedLengthMeters} m`, 120, cursorY + 6);
+            doc.text(`Kalan Bosluk: ${remainingLengthMeters} m`, 120, cursorY + 12);
+
+            cursorY += 30;
+
+            // 3. Tablo Verilerini Hazırla
+            let groupedItems = {};
+            res.placedBoxes.forEach(box => {
+                let key = `${box.name}_${box.w}_${box.l}_${box.h}_${box.color}`;
+                if(!groupedItems[key]) {
+                    groupedItems[key] = { name: box.name, w: box.w, l: box.l, h: box.h, color: box.color, loaded: 1, total: 1, status: 'Yüklendi' };
+                } else {
+                    groupedItems[key].loaded++;
+                    groupedItems[key].total++;
+                }
+            });
+            
+            res.unplacedItems.forEach(box => {
+                let key = `${box.name}_${box.w}_${box.l}_${box.h}_${box.color}`;
+                if(!groupedItems[key]) {
+                    groupedItems[key] = { name: box.name, w: box.w, l: box.l, h: box.h, color: box.color, loaded: 0, total: 1, status: 'Sigamadi' };
+                } else {
+                    groupedItems[key].total++;
+                    groupedItems[key].status = 'Kismen Yuklendi';
+                }
+            });
+
+            // Tablo Başlıkları
+            doc.setFontSize(10);
+            doc.setTextColor(255, 255, 255);
+            doc.setFillColor(39, 147, 212);
+            doc.rect(10, cursorY, pageWidth - 20, 8, 'F');
+            doc.text("Kargo Adi", 12, cursorY + 5.5);
+            doc.text("G(cm)", 70, cursorY + 5.5);
+            doc.text("U(cm)", 90, cursorY + 5.5);
+            doc.text("Y(cm)", 110, cursorY + 5.5);
+            doc.text("Miktar", 130, cursorY + 5.5);
+            doc.text("Renk", 160, cursorY + 5.5);
+            cursorY += 8;
+
+            // Tablo İçeriği
+            doc.setTextColor(0, 0, 0);
+            let i = 0;
+            for (let key in groupedItems) {
+                const item = groupedItems[key];
+                
+                if (i % 2 === 0) {
+                    doc.setFillColor(245, 245, 245);
+                    doc.rect(10, cursorY, pageWidth - 20, 8, 'F');
+                }
+                
+                doc.text(item.name.substring(0, 25), 12, cursorY + 5.5);
+                doc.text(item.w.toString(), 70, cursorY + 5.5);
+                doc.text(item.l.toString(), 90, cursorY + 5.5);
+                doc.text(item.h.toString(), 110, cursorY + 5.5);
+                
+                // Miktar (Yüklenen / Toplam)
+                let miktarText = `${item.loaded} / ${item.total}`;
+                if(item.loaded < item.total) { doc.setTextColor(255, 0, 0); } // Sığmayan varsa kırmızı yap
+                doc.text(miktarText, 130, cursorY + 5.5);
+                doc.setTextColor(0, 0, 0);
+
+                // Renk Kutucuğu
+                let hex = item.color.replace('#', '');
+                let r = parseInt(hex.substring(0,2), 16) || 0;
+                let g = parseInt(hex.substring(2,4), 16) || 0;
+                let b = parseInt(hex.substring(4,6), 16) || 0;
+                
+                doc.setFillColor(r, g, b);
+                doc.rect(160, cursorY + 1.5, 10, 5, 'F');
+                doc.setDrawColor(200, 200, 200);
+                doc.rect(160, cursorY + 1.5, 10, 5, 'S'); 
+
+                cursorY += 8;
+                i++;
+                
+                if (cursorY > 260) {
+                    doc.addPage();
+                    cursorY = 15;
+                }
+            }
+            
+            cursorY += 10;
+            
+            // 4. 3B Ekran Görüntüsü
+            if (cursorY > 150) {
+                doc.addPage();
+                cursorY = 15;
+            }
+            
+            doc.setFontSize(12);
+            doc.setTextColor(39, 147, 212);
+            doc.text(`Tir Gorunumu`, 10, cursorY);
+            cursorY += 5;
+
+            // Arka planı geçici olarak beyaz yapıp render alıyoruz
+            renderer.setClearColor( 0xffffff, 1 ); 
+            renderer.render(scene, camera);
+            
+            const canvasDataUrl = renderer.domElement.toDataURL("image/jpeg", 1.0);
+            
+            renderer.setClearColor( 0x000000, 0 );
+            renderer.render(scene, camera);
+
+            const imgWidth = pageWidth - 20;
+            const imgHeight = (renderer.domElement.height * imgWidth) / renderer.domElement.width;
+            
+            // Eğer resim sayfaya sığmıyorsa biraz küçült
+            let finalHeight = imgHeight;
+            if(cursorY + imgHeight > 280) {
+                 finalHeight = 280 - cursorY;
+            }
+            
+            // Çerçeve ekle
+            doc.setDrawColor(200, 200, 200);
+            doc.rect(9, cursorY - 1, imgWidth + 2, finalHeight + 2, 'S');
+            doc.addImage(canvasDataUrl, 'JPEG', 10, cursorY, imgWidth, finalHeight);
+            
+            // PDF'i İndir
+            const date = new Date();
+            const dateStr = `${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}_${date.getHours()}${date.getMinutes()}`;
+            doc.save(`Fanturk_Yukleme_Raporu_${dateStr}.pdf`);
+        }
+    </script>
+</body>
+</html>
